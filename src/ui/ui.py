@@ -6,8 +6,21 @@ from pydantic import BaseModel, Field
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.chat_models import init_chat_model
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
-# --------- Définition du modèle ---------
+
+
+
+import asyncio  # <-- ajout
+
+# ✅ Patch asyncio pour éviter "There is no current event loop..."
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    
 class Profil(BaseModel):
     title: Optional[str] = Field(default=None, description="Title of the job offer")
     company: Optional[str] = Field(default=None, description="Company offering the job")
@@ -20,18 +33,29 @@ class Profil(BaseModel):
     salary: Optional[str] = Field(default=None, description="Salary range if mentioned")
     description: Optional[str] = Field(default=None, description="Full job description")
 
-# --------- Fonction pour charger la page ---------
+
 def load_pages(url: str):
     loader = WebBaseLoader(web_path=[url])
     return list(loader.lazy_load())
 
-# --------- Streamlit UI ---------
-st.set_page_config(page_title="Extracteur d'offres d'emploi", layout="wide")
 
+def compute_similarity(user_text: str, job_text: str, embedder) -> float:
+    """Calcule la similarité cosinus entre deux textes via embeddings"""
+    user_emb = np.array(embedder.embed_query(user_text))
+    job_emb = np.array(embedder.embed_query(job_text))
+    sim = cosine_similarity([user_emb], [job_emb])[0][0]
+    return round(sim * 100, 2)
+
+
+st.set_page_config(page_title="Extracteur d'offres d'emploi", layout="wide")
 st.title("📝 Extracteur d'informations d'offres d'emploi avec Gemini")
 
 api_key = st.text_input("🔑 Entre ta clé API Gemini", type="password")
 url = st.text_input("🌍 Entre l'URL de l'offre d'emploi")
+
+st.subheader("👤 Votre profil")
+user_experience = st.text_area("Décrivez vos expériences (missions, responsabilités, projets...)")
+user_skills = st.text_area("Listez vos compétences techniques et soft skills (séparées par des virgules)")
 
 if st.button("Analyser l'offre"):
     if not api_key:
@@ -39,7 +63,7 @@ if st.button("Analyser l'offre"):
     elif not url:
         st.error("Merci de renseigner une URL.")
     else:
-        os.environ["GOOGLE_API_KEY"] = api_key
+        
 
         with st.spinner("🔎 Analyse en cours..."):
             try:
@@ -47,6 +71,8 @@ if st.button("Analyser l'offre"):
                 if not docs:
                     st.error("Impossible de charger la page.")
                 else:
+                    os.environ["GOOGLE_API_KEY"] = api_key
+                    embedder = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
                     model = init_chat_model("gemini-2.5-flash", model_provider="google-genai")
                     structured_llm = model.with_structured_output(schema=Profil)
 
@@ -82,7 +108,18 @@ if st.button("Analyser l'offre"):
                     st.write(f"**Compétences techniques** : {', '.join(res.skills or [])}")
                     st.write(f"**Soft skills** : {', '.join(res.soft_skills or [])}")
                     st.write(f"**Salaire** : {res.salary}")
-                    st.write(f"**Description** : {res.description}")
+                    st.write("**Description complète** :")
+                    st.write(res.description)
+
+                    # --- Similarité avec le profil utilisateur ---
+                    if user_experience or user_skills:
+                        user_text = f"{user_experience} {user_skills}"
+                        job_text = f"{res.title} {res.experience} {res.description} {' '.join(res.skills or [])} {' '.join(res.soft_skills or [])}"
+                        score = compute_similarity(user_text, job_text, embedder)
+                        st.subheader("📊 Score de similarité avec votre profil")
+                        st.metric(label="Taux de correspondance (Gemini embeddings)", value=f"{score} %")
+                    else:
+                        st.info("👉 Ajoutez vos expériences et compétences pour obtenir un score de similarité.")
 
             except Exception as e:
                 st.error(f"Erreur pendant l'analyse : {e}")
