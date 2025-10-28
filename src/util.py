@@ -1,8 +1,8 @@
 import os
-import random
 from typing import Optional
 
 import pandas as pd
+import numpy as np
 from langchain.agents import create_agent
 from langchain_community.document_loaders import WebBaseLoader
 from pydantic import BaseModel, Field
@@ -45,15 +45,7 @@ contract_types: list[str] = [
 
 hard_skills: list[str] = [
     "Python",
-    "Java",
-    "C++",
-    "C",
-    "JavaScript",
     "SQL",
-    "HTML",
-    "CSS",
-    "Shell",
-    "GO",
     "Docker",
     "Kubernetes",
     "AWS",
@@ -95,30 +87,30 @@ soft_skills: list[str] = [
 ]
 
 
-def generate_random_data(n: int = 50) -> pd.DataFrame:
-    rows: list[dict] = []
+def generate_random_data() -> pd.DataFrame:
+    df_cities = pd.DataFrame({"city": cities})
+    df_contracts = pd.DataFrame({"contract_type": contract_types})
+    df_hard = pd.DataFrame({
+        "skill_type": "hard",
+        "skill": hard_skills
+    })
+    df_soft = pd.DataFrame({
+        "skill_type": "soft",
+        "skill": soft_skills
+    })
 
-    for _ in range(n):
-        rows.append(
-            {
-                "city": random.choice(cities),
-                "contract_type": random.choice(contract_types),
-                "skill_type": "hard",
-                "skill": random.choice(hard_skills),
-                "nb": random.randint(10, 100),
-            }
-        )
-        rows.append(
-            {
-                "city": random.choice(cities),
-                "contract_type": random.choice(contract_types),
-                "skill_type": "soft",
-                "skill": random.choice(soft_skills),
-                "nb": random.randint(10, 100),
-            }
-        )
+    df_skills = pd.concat([df_hard, df_soft], ignore_index=True)
 
-    return pd.DataFrame(rows)
+    # Produit cartésien entre city, contract et skills
+    df = (
+        df_cities
+        .merge(df_contracts, how="cross")
+        .merge(df_skills, how="cross")
+    )
+
+    df["nb"] = np.random.randint(10, 101, size=len(df))
+
+    return df
 
 
 def load_pages(url: str):

@@ -4,7 +4,7 @@ import streamlit as st
 
 from util import generate_random_data
 
-data = generate_random_data(2)
+data = generate_random_data()
 st.set_page_config(page_title="Extracteur d'offres d'emploi", layout="wide")
 st.title("📝 Extracteur d'informations d'offres d'emploi avec Gemini")
 
